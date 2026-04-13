@@ -387,6 +387,42 @@ GOLD_TABLES = {
         """,
         "description": "Computing monthly order trends …",
     },
+
+    # 4. Return analysis by product category
+    "gold_return_analysis": {
+        "ddl": """
+            CREATE TABLE IF NOT EXISTS {catalog}.{schema}.gold_return_analysis (
+                category             STRING,
+                total_orders         BIGINT,
+                total_returns        BIGINT,
+                return_rate          DOUBLE,
+                total_revenue_lost   DOUBLE
+            )
+            USING DELTA
+            TBLPROPERTIES ('layer' = 'gold')
+        """,
+        "insert": """
+            INSERT INTO {catalog}.{schema}.gold_return_analysis
+            SELECT
+                category,
+                COUNT(DISTINCT order_id)                                          AS total_orders,
+                COUNT(DISTINCT CASE WHEN status = 'returned' THEN order_id END)   AS total_returns,
+                ROUND(
+                    COUNT(DISTINCT CASE WHEN status = 'returned' THEN order_id END)
+                    * 100.0
+                    / NULLIF(COUNT(DISTINCT order_id), 0),
+                    2
+                )                                                                 AS return_rate,
+                ROUND(
+                    SUM(CASE WHEN status = 'returned' THEN total_price ELSE 0 END),
+                    2
+                )                                                                 AS total_revenue_lost
+            FROM   {catalog}.{schema}.silver_order_items
+            GROUP  BY category
+            ORDER  BY total_revenue_lost DESC
+        """,
+        "description": "Computing return analysis by product category …",
+    },
 }
 
 
