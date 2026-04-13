@@ -220,3 +220,9 @@ ecommerce-pipeline/
 ├── orders.csv            # Generated: 1,000 order headers
 └── order_items.csv       # Generated: 2,000 order line items
 ```
+
+---
+
+## Author
+
+**Venkat Chittoor** — [github.com/venkatchittoor](https://github.com/venkatchittoor)
