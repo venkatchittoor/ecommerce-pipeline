@@ -65,3 +65,50 @@ Built in Databricks SQL dashboards against the Gold tables:
 - **Electronics** accounts for the most revenue lost to returns: **$52,323** despite a 12.87% return rate — driven by high item prices
 - **Sports** has the highest order volume (335 orders) with a relatively low return rate of 12.54%
 - Top customer (Ashley Pena) spent **$14,494** across 10 orders
+
+---
+
+## Phase 3 — Streaming Simulation & Anomaly Detection
+
+### What Was Built
+
+**Stream Simulator**
+
+Built `stream_simulator.py` — a standalone script that generates realistic e-commerce order events and writes one JSON file per event to `streaming_data/` every 3 seconds. Events include UUID, customer/product IDs, quantity, price, timestamp, and status (90% completed / 10% returned). Runs indefinitely until Ctrl+C.
+
+---
+
+### Micro-Batch Streaming Pipeline
+
+Built a PySpark Structured Streaming pipeline (`Phase3_Streaming_AnomalyDetection.ipynb`) that reads JSON events from `streaming_data/` and lands them into a Delta table in micro-batches:
+
+| Metric | Value |
+|---|---|
+| Events processed | 350 |
+| Batches | 5 |
+| Destination table | `bronze_orders_stream` |
+| Trigger mode | `availableNow` (micro-batch) |
+
+---
+
+### Anomaly Detection — 2σ Threshold
+
+Applied a 2 standard deviation threshold to `total_price` across all streaming orders to flag statistically unusual transactions:
+
+| Metric | Value |
+|---|---|
+| Orders analysed | 350 |
+| Anomalies flagged | 15 |
+| Anomaly rate | 4.3% |
+| Revenue at risk | $63,754 |
+
+Flagged orders persisted with deviation scores into `gold_stream_anomalies` for downstream alerting.
+
+---
+
+### Key Findings
+
+- **4.3% anomaly rate** in streaming orders — 15 of 350 events flagged by 2σ threshold
+- **$63,754 revenue at risk** across the 15 anomalous orders
+- **Customer 94** placed 3 anomalous high-value orders — pattern consistent with a potential fraud signal
+- README updated with full Phase 3 documentation

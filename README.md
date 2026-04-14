@@ -96,45 +96,6 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 
 ---
 
-## Phase 3: Streaming Simulation & Anomaly Detection
-
-### Event Stream Simulator
-
-`stream_simulator.py` generates realistic e-commerce order events locally, writing one JSON file to `streaming_data/` every 3 seconds. Each event contains a UUID, random customer and product, quantity, price, timestamp, and status (90% completed / 10% returned). Run it independently to feed the streaming pipeline:
-
-```bash
-python stream_simulator.py
-# Press Ctrl+C to stop
-```
-
-### Micro-Batch Streaming Pipeline
-
-Built a PySpark Structured Streaming pipeline in `Phase3_Streaming_AnomalyDetection.ipynb` that reads JSON events from `streaming_data/` and lands them into a Delta table in micro-batches:
-
-| Metric | Value |
-|---|---|
-| Events processed | 350 |
-| Batches | 5 |
-| Destination table | `bronze_orders_stream` |
-| Trigger mode | `availableNow` (micro-batch) |
-
-### Anomaly Detection
-
-Applied a **2 standard deviation (2σ) threshold** to `total_price` across the streaming orders to flag statistically unusual transactions:
-
-| Metric | Value |
-|---|---|
-| Orders analysed | 350 |
-| Anomalies flagged | 15 |
-| Anomaly rate | 4.3% |
-| Revenue at risk | **$63,754** |
-
-Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, enabling downstream alerting and investigation.
-
-**Key finding:** Customer 94 placed 3 anomalous high-value orders — a pattern consistent with a potential fraud signal.
-
----
-
 ## Phase 2: Data Quality, PySpark & Pipeline Monitoring
 
 ### PySpark Exploration in Databricks Notebooks
@@ -190,6 +151,45 @@ SELECT run_timestamp, status, layer_reached, failed_checks, duration_seconds
 FROM workspace.ecommerce.pipeline_runs
 ORDER BY run_timestamp;
 ```
+
+---
+
+## Phase 3: Streaming Simulation & Anomaly Detection
+
+### Event Stream Simulator
+
+`stream_simulator.py` generates realistic e-commerce order events locally, writing one JSON file to `streaming_data/` every 3 seconds. Each event contains a UUID, random customer and product, quantity, price, timestamp, and status (90% completed / 10% returned). Run it independently to feed the streaming pipeline:
+
+```bash
+python stream_simulator.py
+# Press Ctrl+C to stop
+```
+
+### Micro-Batch Streaming Pipeline
+
+Built a PySpark Structured Streaming pipeline in `Phase3_Streaming_AnomalyDetection.ipynb` that reads JSON events from `streaming_data/` and lands them into a Delta table in micro-batches:
+
+| Metric | Value |
+|---|---|
+| Events processed | 350 |
+| Batches | 5 |
+| Destination table | `bronze_orders_stream` |
+| Trigger mode | `availableNow` (micro-batch) |
+
+### Anomaly Detection
+
+Applied a **2 standard deviation (2σ) threshold** to `total_price` across the streaming orders to flag statistically unusual transactions:
+
+| Metric | Value |
+|---|---|
+| Orders analysed | 350 |
+| Anomalies flagged | 15 |
+| Anomaly rate | 4.3% |
+| Revenue at risk | **$63,754** |
+
+Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, enabling downstream alerting and investigation.
+
+**Key finding:** Customer 94 placed 3 anomalous high-value orders — a pattern consistent with a potential fraud signal.
 
 ---
 
