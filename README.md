@@ -80,6 +80,19 @@ Transformations applied:
 | `gold_top_customers` | 100 | Top 100 customers ranked by lifetime spend (returns excluded) |
 | `gold_monthly_order_trends` | 7 | Monthly order volume and revenue trend over the trailing 6 months |
 | `gold_return_analysis` | 7 | Return rate and total revenue lost per product category |
+| `gold_customer_segments` | 3 | Revenue, order count, and avg order value grouped by customer tenure segment |
+
+### Silver — Enriched (notebook)
+
+| Table | Description |
+|---|---|
+| `silver_customers_enriched` | Customers with a derived `tenure_segment` column: New / Growing / Loyal |
+
+### Logging
+
+| Table | Description |
+|---|---|
+| `pipeline_runs` | One row per pipeline execution — status, layer reached, failed checks, Bronze row counts, duration |
 
 ---
 
@@ -117,6 +130,77 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 
 ---
 
+## Session 2 — PySpark, Data Quality & Customer Segmentation
+
+### PySpark Exploration in Databricks Notebooks
+
+Explored the pipeline tables interactively using PySpark in a Databricks notebook (`Session2_PySpark_Exploration.ipynb`). Covered DataFrame operations, schema inspection, aggregations, and window functions on top of the Delta tables built by `pipeline.py`.
+
+### Data Quality Checks
+
+Added an automated quality gate that runs after Bronze ingestion and blocks Silver if any check fails. **27 checks** run across all 4 Bronze tables on every pipeline execution:
+
+| Check type | What it validates |
+|---|---|
+| Row count | Each table meets a minimum row threshold |
+| Duplicate primary keys | `customer_id`, `product_id`, `order_id`, `item_id` are unique |
+| Null percentage | Every column in every table is 0% null |
+
+Results are printed as a PASS/FAIL report before Silver runs. A single failure raises an error and halts the pipeline.
+
+### Customer Segmentation Tables
+
+Two new tables built in the notebook to analyse revenue by customer tenure:
+
+**`silver_customers_enriched`** — extends the silver layer with a tenure segment derived from each customer's `signup_date`:
+
+| Segment | Definition |
+|---|---|
+| New | Signed up within the last 6 months |
+| Growing | Signed up 6–18 months ago |
+| Loyal | Signed up more than 18 months ago |
+
+**`gold_customer_segments`** — aggregates revenue, order count, and average order value grouped by tenure segment.
+
+### Pipeline Run Logging
+
+Every pipeline execution — success or failure — appends one row to `workspace.ecommerce.pipeline_runs`:
+
+| Column | Description |
+|---|---|
+| `run_id` | Unique UUID per run |
+| `run_timestamp` | UTC start time |
+| `status` | `SUCCESS` or `FAILED` |
+| `layer_reached` | Last layer attempted (`BRONZE`, `QUALITY_CHECK`, `SILVER`, `GOLD`) |
+| `failed_checks` | Semicolon-separated list of failing check descriptions; `NULL` on success |
+| `rows_bronze_*` | Row counts for each Bronze table |
+| `duration_seconds` | Wall-clock runtime |
+
+Query run history at any time:
+
+```sql
+SELECT run_timestamp, status, layer_reached, failed_checks, duration_seconds
+FROM workspace.ecommerce.pipeline_runs
+ORDER BY run_timestamp;
+```
+
+### Delta Lake Time Travel & RESTORE
+
+Demonstrated time travel and point-in-time restore on the Silver table:
+
+```sql
+-- Inspect full version history
+DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
+
+-- Query a previous version
+SELECT * FROM workspace.ecommerce.silver_order_items VERSION AS OF 0;
+
+-- Roll back to a prior version
+RESTORE TABLE workspace.ecommerce.silver_order_items TO VERSION AS OF 0;
+```
+
+---
+
 ## Key Findings
 
 | Finding | Value |
@@ -126,6 +210,7 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 | Highest order volume category | Sports — 335 orders |
 | Top customer lifetime spend | Ashley Pena — $14,494 across 10 orders |
 | Electronics return rate | 12.87% — lower than Home & Kitchen but highest absolute revenue lost due to high item prices |
+| Highest revenue per customer | **Growing segment** — customers 6–18 months old outspend both newer and longer-tenured cohorts on a per-person basis |
 
 ---
 
@@ -210,15 +295,16 @@ The pipeline will:
 
 ```
 ecommerce-pipeline/
-├── generate_data.py      # Synthetic data generator (Faker-based)
-├── pipeline.py           # Main pipeline — Bronze, Silver, Gold layers
-├── requirements.txt      # Python dependencies
-├── .env.example          # Credentials template
-├── PROGRESS.md           # Session-by-session progress log
-├── customers.csv         # Generated: 200 customer records
-├── products.csv          # Generated: 50 product records
-├── orders.csv            # Generated: 1,000 order headers
-└── order_items.csv       # Generated: 2,000 order line items
+├── generate_data.py                    # Synthetic data generator (Faker-based)
+├── pipeline.py                         # Main pipeline — Bronze, Silver, Gold layers + logging
+├── Session2_PySpark_Exploration.ipynb  # PySpark notebook — segmentation, quality checks, time travel
+├── requirements.txt                    # Python dependencies
+├── .env.example                        # Credentials template
+├── PROGRESS.md                         # Session-by-session progress log
+├── customers.csv                       # Generated: 200 customer records
+├── products.csv                        # Generated: 50 product records
+├── orders.csv                          # Generated: 1,000 order headers
+└── order_items.csv                     # Generated: 2,000 order line items
 ```
 
 ---
