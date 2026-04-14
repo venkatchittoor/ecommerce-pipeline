@@ -1,6 +1,6 @@
 # Ecommerce Pipeline — Progress Log
 
-## Session 1 — Bronze / Silver / Gold Pipeline
+## Phase 1 — Medallion Architecture & Core Pipeline
 
 ### What Was Built
 

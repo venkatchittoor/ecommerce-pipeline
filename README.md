@@ -275,7 +275,7 @@ ecommerce-pipeline/
 ├── Phase2_PySpark_Exploration.ipynb  # PySpark notebook — segmentation, quality checks, time travel
 ├── requirements.txt                    # Python dependencies
 ├── .env.example                        # Credentials template
-├── PROGRESS.md                         # Session-by-session progress log
+├── PROGRESS.md                         # Phase-by-phase progress log
 ├── customers.csv                       # Generated: 200 customer records
 ├── products.csv                        # Generated: 50 product records
 ├── orders.csv                          # Generated: 1,000 order headers
