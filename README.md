@@ -96,6 +96,45 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 
 ---
 
+## Phase 3: Streaming Simulation & Anomaly Detection
+
+### Event Stream Simulator
+
+`stream_simulator.py` generates realistic e-commerce order events locally, writing one JSON file to `streaming_data/` every 3 seconds. Each event contains a UUID, random customer and product, quantity, price, timestamp, and status (90% completed / 10% returned). Run it independently to feed the streaming pipeline:
+
+```bash
+python stream_simulator.py
+# Press Ctrl+C to stop
+```
+
+### Micro-Batch Streaming Pipeline
+
+Built a PySpark Structured Streaming pipeline in `Phase3_Streaming_AnomalyDetection.ipynb` that reads JSON events from `streaming_data/` and lands them into a Delta table in micro-batches:
+
+| Metric | Value |
+|---|---|
+| Events processed | 350 |
+| Batches | 5 |
+| Destination table | `bronze_orders_stream` |
+| Trigger mode | `availableNow` (micro-batch) |
+
+### Anomaly Detection
+
+Applied a **2 standard deviation (2σ) threshold** to `total_price` across the streaming orders to flag statistically unusual transactions:
+
+| Metric | Value |
+|---|---|
+| Orders analysed | 350 |
+| Anomalies flagged | 15 |
+| Anomaly rate | 4.3% |
+| Revenue at risk | **$63,754** |
+
+Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, enabling downstream alerting and investigation.
+
+**Key finding:** Customer 94 placed 3 anomalous high-value orders — a pattern consistent with a potential fraud signal.
+
+---
+
 ## Phase 2: Data Quality, PySpark & Pipeline Monitoring
 
 ### PySpark Exploration in Databricks Notebooks
@@ -170,6 +209,8 @@ ORDER BY run_timestamp;
 | Silver | `silver_customers_enriched` | 2 | Customers with tenure segment labels |
 | Gold | `gold_customer_segments` | 2 | Revenue aggregated by tenure segment |
 | Logging | `pipeline_runs` | 2 | One row per pipeline execution |
+| Bronze | `bronze_orders_stream` | 3 | Streaming order events landed via micro-batch pipeline |
+| Gold | `gold_stream_anomalies` | 3 | Anomalous orders flagged by 2σ threshold detection |
 
 ---
 
@@ -183,6 +224,8 @@ ORDER BY run_timestamp;
 | Top customer lifetime spend | Ashley Pena — $14,494 across 10 orders |
 | Electronics return rate | 12.87% — lower than Home & Kitchen but highest absolute revenue lost due to high item prices |
 | Highest revenue per customer | **Growing segment** — customers 6–18 months old outspend both newer and longer-tenured cohorts |
+| Streaming anomaly rate | **4.3%** of orders flagged by 2σ detection — $63,754 revenue at risk |
+| Top fraud signal | Customer 94 placed 3 anomalous high-value orders across streaming data |
 
 ---
 
@@ -270,17 +313,26 @@ The pipeline will:
 
 ```
 ecommerce-pipeline/
-├── generate_data.py                    # Synthetic data generator (Faker-based)
-├── pipeline.py                         # Main pipeline — Bronze, Silver, Gold layers + logging
-├── Phase2_PySpark_DataQuality_CustomerSegmentation.ipynb  # PySpark notebook — segmentation, quality checks, time travel
-├── requirements.txt                    # Python dependencies
-├── .env.example                        # Credentials template
-├── PROGRESS.md                         # Phase-by-phase progress log
-├── customers.csv                       # Generated: 200 customer records
-├── products.csv                        # Generated: 50 product records
-├── orders.csv                          # Generated: 1,000 order headers
-└── order_items.csv                     # Generated: 2,000 order line items
+├── generate_data.py                                          # Synthetic data generator (Faker-based)
+├── pipeline.py                                               # Main pipeline — Bronze, Silver, Gold layers + logging
+├── stream_simulator.py                                       # Local event generator — writes JSON to streaming_data/
+├── Phase2_PySpark_DataQuality_CustomerSegmentation.ipynb    # Phase 2 notebook
+├── Phase3_Streaming_AnomalyDetection.ipynb                  # Phase 3 notebook
+├── requirements.txt                                          # Python dependencies
+├── .env.example                                              # Credentials template
+├── PROGRESS.md                                               # Phase-by-phase progress log
+├── customers.csv                                             # Generated: 200 customer records
+├── products.csv                                              # Generated: 50 product records
+├── orders.csv                                                # Generated: 1,000 order headers
+└── order_items.csv                                           # Generated: 2,000 order line items
 ```
+
+### Notebooks
+
+| Notebook | Phase | Contents |
+|---|---|---|
+| `Phase2_PySpark_DataQuality_CustomerSegmentation.ipynb` | 2 | PySpark exploration, data quality checks, customer tenure segmentation |
+| `Phase3_Streaming_AnomalyDetection.ipynb` | 3 | Micro-batch streaming pipeline, anomaly detection using 2σ threshold |
 
 ---
 
