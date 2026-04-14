@@ -18,6 +18,8 @@ Databricks SQL Warehouse.  Each layer builds on the previous one:
 
 import os
 import textwrap
+import uuid
+from datetime import datetime
 
 import pandas as pd
 from databricks import sql
@@ -37,6 +39,9 @@ DATABRICKS_TOKEN     = os.environ["DATABRICKS_TOKEN"]
 # pipeline auto-detect a writable catalog at runtime.
 CATALOG = os.environ.get("DATABRICKS_CATALOG", "main")
 SCHEMA  = os.environ.get("DATABRICKS_SCHEMA", "ecommerce")
+
+# Populated by data_quality_check() before it raises; read by the logging layer.
+_quality_failures: list = []
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -182,6 +187,109 @@ def run_bronze(cursor) -> None:
         upload_csv_to_table(cursor, df, full_name)
 
     print("\n  Bronze layer complete.")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DATA QUALITY — Bronze Validation
+# Goal  : assert the four Bronze tables meet basic quality standards before
+#         any transformation runs.  Failures halt the pipeline immediately.
+# ═════════════════════════════════════════════════════════════════════════════
+
+BRONZE_QUALITY_CONFIG = {
+    "bronze_customers":   {"min_rows": 100,  "pk": "customer_id"},
+    "bronze_products":    {"min_rows": 10,   "pk": "product_id"},
+    "bronze_orders":      {"min_rows": 500,  "pk": "order_id"},
+    "bronze_order_items": {"min_rows": 1000, "pk": "item_id"},
+}
+
+
+def _get_columns(cursor, full_name: str) -> list:
+    """Return ordered column names for a table, filtering DESCRIBE metadata rows."""
+    cursor.execute(f"DESCRIBE TABLE {full_name}")
+    return [
+        row[0] for row in cursor.fetchall()
+        if row[0] and not row[0].startswith("#") and row[0].strip()
+    ]
+
+
+def data_quality_check(cursor) -> None:
+    print("\n" + "═" * 60)
+    print("  DATA QUALITY — Bronze Validation")
+    print("═" * 60)
+
+    rows = []   # (table, check, expected, actual, result)
+    failed = False
+
+    for table_name, cfg in BRONZE_QUALITY_CONFIG.items():
+        full_name = f"{CATALOG}.{SCHEMA}.{table_name}"
+        min_rows  = cfg["min_rows"]
+        pk        = cfg["pk"]
+
+        # ── Row count ──────────────────────────────────────────────────────
+        cursor.execute(f"SELECT COUNT(*) FROM {full_name}")
+        row_count = cursor.fetchone()[0]
+        ok = row_count >= min_rows
+        failed = failed or not ok
+        rows.append((
+            table_name, "row_count",
+            f">= {min_rows:,}", f"{row_count:,}",
+            "PASS" if ok else "FAIL",
+        ))
+
+        # ── Duplicate primary keys ─────────────────────────────────────────
+        cursor.execute(
+            f"SELECT COUNT(*) - COUNT(DISTINCT {pk}) FROM {full_name}"
+        )
+        dupes = cursor.fetchone()[0]
+        ok = dupes == 0
+        failed = failed or not ok
+        rows.append((
+            table_name, f"duplicate {pk}s",
+            "0", f"{dupes:,}",
+            "PASS" if ok else "FAIL",
+        ))
+
+        # ── Null percentage per column ─────────────────────────────────────
+        columns = _get_columns(cursor, full_name)
+
+        # Single query counts nulls for all columns at once
+        null_exprs = ",\n            ".join(
+            f"SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}"
+            for col in columns
+        )
+        cursor.execute(
+            f"SELECT COUNT(*) AS total_rows, {null_exprs} FROM {full_name}"
+        )
+        result      = cursor.fetchone()
+        total_rows  = result[0]
+        null_counts = result[1:]   # one value per column, in definition order
+
+        for col, null_count in zip(columns, null_counts):
+            null_count  = null_count or 0
+            null_pct    = round(null_count * 100.0 / total_rows, 1) if total_rows else 0.0
+            ok          = null_pct == 0.0
+            failed      = failed or not ok
+            rows.append((
+                table_name, f"nulls in {col}",
+                "0.0%", f"{null_pct}%",
+                "PASS" if ok else "FAIL",
+            ))
+
+    print()
+    print(tabulate(rows, headers=["table", "check", "expected", "actual", "result"],
+                   tablefmt="rounded_outline"))
+
+    if failed:
+        _quality_failures[:] = [
+            f"{r[0]}: {r[1]} (expected {r[2]}, actual {r[3]})"
+            for r in rows if r[4] == "FAIL"
+        ]
+        raise ValueError(
+            "\n  Data quality checks FAILED — Silver layer will not run.\n"
+            "  Fix the issues reported above and re-run the pipeline."
+        )
+
+    print("\n  All data quality checks passed.\n")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -455,6 +563,73 @@ def run_gold(cursor) -> None:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# PIPELINE LOGGING
+# Goal  : append one row to pipeline_runs after every execution, whether it
+#         succeeds or fails, so run history is always queryable in Databricks.
+# ═════════════════════════════════════════════════════════════════════════════
+
+PIPELINE_RUNS_DDL = """
+    CREATE TABLE IF NOT EXISTS {catalog}.{schema}.pipeline_runs (
+        run_id                   STRING,
+        run_timestamp            TIMESTAMP,
+        status                   STRING,
+        layer_reached            STRING,
+        failed_checks            STRING,
+        rows_bronze_customers    BIGINT,
+        rows_bronze_products     BIGINT,
+        rows_bronze_orders       BIGINT,
+        rows_bronze_order_items  BIGINT,
+        duration_seconds         DOUBLE
+    )
+    USING DELTA
+    TBLPROPERTIES ('layer' = 'logging')
+"""
+
+
+def ensure_pipeline_runs_table(cursor) -> None:
+    cursor.execute(
+        textwrap.dedent(
+            PIPELINE_RUNS_DDL.format(catalog=CATALOG, schema=SCHEMA)
+        )
+    )
+
+
+def log_pipeline_run(cursor, *, run_id, run_timestamp, status, layer_reached,
+                     failed_checks, bronze_rows, duration_secs) -> None:
+    def _v(val):
+        """Format a Python value as a SQL literal."""
+        if val is None:
+            return "NULL"
+        if isinstance(val, str):
+            return "'" + val.replace("'", "''") + "'"
+        return str(val)
+
+    full_name = f"{CATALOG}.{SCHEMA}.pipeline_runs"
+    ts_str    = run_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute(f"""
+        INSERT INTO {full_name}
+            (run_id, run_timestamp, status, layer_reached, failed_checks,
+             rows_bronze_customers, rows_bronze_products,
+             rows_bronze_orders, rows_bronze_order_items,
+             duration_seconds)
+        VALUES (
+            {_v(run_id)},
+            CAST({_v(ts_str)} AS TIMESTAMP),
+            {_v(status)},
+            {_v(layer_reached)},
+            {_v(failed_checks)},
+            {_v(bronze_rows.get('bronze_customers'))},
+            {_v(bronze_rows.get('bronze_products'))},
+            {_v(bronze_rows.get('bronze_orders'))},
+            {_v(bronze_rows.get('bronze_order_items'))},
+            {_v(round(duration_secs, 2))}
+        )
+    """)
+    print(f"  Run logged → {full_name}  [{status}]")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -495,14 +670,65 @@ def detect_catalog(cursor) -> str:
 
 def main() -> None:
     global CATALOG
+
+    run_id       = str(uuid.uuid4())
+    start_ts     = datetime.utcnow()
+    status       = "FAILED"
+    layer_reached = "BRONZE"
+    bronze_rows  = {}
+    _quality_failures.clear()
+
     print("\nConnecting to Databricks …")
     with get_connection() as conn:
         with conn.cursor() as cursor:
             CATALOG = detect_catalog(cursor)
             print(f"  Using catalog: {CATALOG}")
-            run_bronze(cursor)
-            run_silver(cursor)
-            run_gold(cursor)
+            ensure_pipeline_runs_table(cursor)
+
+            _exc = None
+            try:
+                layer_reached = "BRONZE"
+                run_bronze(cursor)
+
+                # Capture bronze row counts for the log record
+                for tbl in ("bronze_customers", "bronze_products",
+                            "bronze_orders", "bronze_order_items"):
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {CATALOG}.{SCHEMA}.{tbl}"
+                    )
+                    bronze_rows[tbl] = cursor.fetchone()[0]
+
+                layer_reached = "QUALITY_CHECK"
+                data_quality_check(cursor)
+
+                layer_reached = "SILVER"
+                run_silver(cursor)
+
+                layer_reached = "GOLD"
+                run_gold(cursor)
+
+                status = "SUCCESS"
+
+            except Exception as e:
+                _exc = e
+
+            finally:
+                duration = round(
+                    (datetime.utcnow() - start_ts).total_seconds(), 2
+                )
+                log_pipeline_run(
+                    cursor,
+                    run_id        = run_id,
+                    run_timestamp = start_ts,
+                    status        = status,
+                    layer_reached = layer_reached,
+                    failed_checks = "; ".join(_quality_failures) or None,
+                    bronze_rows   = bronze_rows,
+                    duration_secs = duration,
+                )
+
+            if _exc is not None:
+                raise _exc
 
     print("\n" + "═" * 60)
     print("  Pipeline finished successfully.")
