@@ -100,7 +100,7 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 
 ### PySpark Exploration in Databricks Notebooks
 
-Explored the pipeline tables interactively using PySpark in a Databricks notebook (`Session2_PySpark_Exploration.ipynb`). Covered DataFrame operations, schema inspection, aggregations, and window functions on top of the Delta tables built by `pipeline.py`.
+Explored the pipeline tables interactively using PySpark in a Databricks notebook (`Phase2_PySpark_Exploration.ipynb`). Covered DataFrame operations, schema inspection, aggregations, and window functions on top of the Delta tables built by `pipeline.py`.
 
 ### Data Quality Checks
 
@@ -272,7 +272,7 @@ The pipeline will:
 ecommerce-pipeline/
 ├── generate_data.py                    # Synthetic data generator (Faker-based)
 ├── pipeline.py                         # Main pipeline — Bronze, Silver, Gold layers + logging
-├── Session2_PySpark_Exploration.ipynb  # PySpark notebook — segmentation, quality checks, time travel
+├── Phase2_PySpark_Exploration.ipynb  # PySpark notebook — segmentation, quality checks, time travel
 ├── requirements.txt                    # Python dependencies
 ├── .env.example                        # Credentials template
 ├── PROGRESS.md                         # Session-by-session progress log
