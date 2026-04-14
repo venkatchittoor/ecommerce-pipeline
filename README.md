@@ -1,21 +1,16 @@
 # Ecommerce Pipeline
 
-A production-style data engineering pipeline built on **Databricks** and **Delta Lake**, implementing the **Medallion Architecture** (Bronze → Silver → Gold) to transform raw e-commerce CSVs into business-ready aggregation tables and a BI dashboard.
+A production-style data engineering pipeline built on **Databricks** and **Delta Lake**, implementing the **Medallion Architecture** (Bronze → Silver → Gold) to transform raw e-commerce CSVs into business-ready aggregation tables, a BI dashboard, and automated data quality monitoring.
 
 ---
 
-## What It Does
+## Phase 1: Medallion Architecture & Core Pipeline
 
-1. Generates realistic synthetic e-commerce data (customers, products, orders, order items)
-2. Ingests raw CSVs into Delta tables with zero transformation (Bronze)
-3. Cleanses, casts, and joins the raw tables into a single enriched fact table (Silver)
-4. Aggregates the fact table into four business metric tables consumed by a dashboard (Gold)
+### What Was Built
 
-The pipeline is fully **idempotent** — it can be re-run at any time and produces the same result.
+Designed and implemented a full Medallion pipeline that takes raw CSV files through three layers of transformation and lands them in Delta tables queryable by BI tools.
 
----
-
-## Medallion Architecture
+### Medallion Architecture
 
 ```
 CSV Files
@@ -43,66 +38,40 @@ CSV Files
 └─────────────────────────────────────┘
 ```
 
-Each layer builds on the previous one. Re-running the pipeline truncates and reloads each layer so results are always consistent.
+Each layer builds on the previous one. Re-running `pipeline.py` truncates and reloads each layer so results are always consistent (**fully idempotent**).
 
----
+### 8 Delta Tables
 
-## Tables
-
-### Bronze (4 tables) — Raw Ingest
-
-| Table | Source File | Rows | Description |
+| Layer | Table | Rows | Description |
 |---|---|---|---|
-| `bronze_customers` | customers.csv | 200 | Raw customer records — name, email, country, signup date |
-| `bronze_products` | products.csv | 50 | Raw product catalog — name, category, base price |
-| `bronze_orders` | orders.csv | 1,000 | Raw order headers — order date, status |
-| `bronze_order_items` | order_items.csv | 2,000 | Raw line items — quantity, unit price, total price |
+| Bronze | `bronze_customers` | 200 | Raw customer records — name, email, country, signup date |
+| Bronze | `bronze_products` | 50 | Raw product catalog — name, category, base price |
+| Bronze | `bronze_orders` | 1,000 | Raw order headers — order date, status |
+| Bronze | `bronze_order_items` | 2,000 | Raw line items — quantity, unit price, total price |
+| Silver | `silver_order_items` | 2,000 | All four bronze tables joined and cleansed into a single enriched fact table |
+| Gold | `gold_revenue_by_category` | 7 | Total revenue, units sold, and order count per product category |
+| Gold | `gold_top_customers` | 100 | Top 100 customers ranked by lifetime spend |
+| Gold | `gold_monthly_order_trends` | 7 | Monthly order volume and revenue over the trailing 6 months |
 
-All columns stored as strings exactly as they appear in the source files. No filtering, casting, or joining at this layer.
-
-### Silver (1 table) — Cleansed & Joined
-
-| Table | Rows | Description |
-|---|---|---|
-| `silver_order_items` | 2,000 | All four bronze tables joined into a single enriched fact table with correct data types, trimmed strings, and null rows removed |
-
-Transformations applied:
+Silver transformations applied:
 - Dates cast from string to `DATE`
 - Prices and quantities cast to `DOUBLE` / `INT`
 - Emails lowercased and trimmed
 - Rows with null keys, zero prices, or zero quantities filtered out
 
-### Gold (4 tables) — Business Aggregations
+### Databricks SQL Dashboard
 
-| Table | Rows | Description |
-|---|---|---|
-| `gold_revenue_by_category` | 7 | Total revenue, units sold, and order count per product category (returns excluded) |
-| `gold_top_customers` | 100 | Top 100 customers ranked by lifetime spend (returns excluded) |
-| `gold_monthly_order_trends` | 7 | Monthly order volume and revenue trend over the trailing 6 months |
-| `gold_return_analysis` | 7 | Return rate and total revenue lost per product category |
-| `gold_customer_segments` | 3 | Revenue, order count, and avg order value grouped by customer tenure segment |
+Built a live dashboard in Databricks SQL connected directly to the Gold tables, visualising:
+- Revenue breakdown by product category
+- Top customers by lifetime spend
+- Monthly order trend
+- Return rate and revenue lost per category
 
-### Silver — Enriched (notebook)
+### Delta Lake Features
 
-| Table | Description |
-|---|---|
-| `silver_customers_enriched` | Customers with a derived `tenure_segment` column: New / Growing / Loyal |
+**Idempotency** — every table is truncated before each load, guaranteeing clean results on re-runs with no duplicate rows.
 
-### Logging
-
-| Table | Description |
-|---|---|
-| `pipeline_runs` | One row per pipeline execution — status, layer reached, failed checks, Bronze row counts, duration |
-
----
-
-## Delta Lake Features Demonstrated
-
-### Idempotency
-Every table is truncated before each load. Re-running `pipeline.py` always produces a clean, consistent result with no duplicate rows.
-
-### Time Travel
-Delta Lake automatically versions every table on each write. You can query any previous version:
+**Time Travel** — Delta Lake automatically versions every table on every write:
 
 ```sql
 -- Query silver table as it looked after the first pipeline run
@@ -113,16 +82,13 @@ SELECT * FROM workspace.ecommerce.silver_order_items
 TIMESTAMP AS OF '2024-01-01 00:00:00';
 ```
 
-### RESTORE
-Roll a table back to any prior version:
+**RESTORE** — roll any table back to a prior version:
 
 ```sql
--- Restore silver table to version 0
 RESTORE TABLE workspace.ecommerce.silver_order_items TO VERSION AS OF 0;
 ```
 
-### Delta History
-Inspect the full audit log of changes to any table:
+**Delta History** — full audit log of every change:
 
 ```sql
 DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
@@ -130,7 +96,7 @@ DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
 
 ---
 
-## Session 2 — PySpark, Data Quality & Customer Segmentation
+## Phase 2: Data Quality, PySpark & Pipeline Monitoring
 
 ### PySpark Exploration in Databricks Notebooks
 
@@ -138,7 +104,7 @@ Explored the pipeline tables interactively using PySpark in a Databricks noteboo
 
 ### Data Quality Checks
 
-Added an automated quality gate that runs after Bronze ingestion and blocks Silver if any check fails. **27 checks** run across all 4 Bronze tables on every pipeline execution:
+Added an automated quality gate to `pipeline.py` that runs after Bronze ingestion and blocks Silver if any check fails. **27 checks** run across all 4 Bronze tables on every pipeline execution:
 
 | Check type | What it validates |
 |---|---|
@@ -146,13 +112,13 @@ Added an automated quality gate that runs after Bronze ingestion and blocks Silv
 | Duplicate primary keys | `customer_id`, `product_id`, `order_id`, `item_id` are unique |
 | Null percentage | Every column in every table is 0% null |
 
-Results are printed as a PASS/FAIL report before Silver runs. A single failure raises an error and halts the pipeline.
+Results are printed as a PASS/FAIL report before Silver runs. A single failure raises an error, logs a `FAILED` record to `pipeline_runs`, and halts the pipeline.
 
-### Customer Segmentation Tables
+### Customer Segmentation
 
-Two new tables built in the notebook to analyse revenue by customer tenure:
+Two new tables built in the PySpark notebook to analyse revenue by customer tenure:
 
-**`silver_customers_enriched`** — extends the silver layer with a tenure segment derived from each customer's `signup_date`:
+**`silver_customers_enriched`** — extends the silver layer with a derived `tenure_segment` based on `signup_date`:
 
 | Segment | Definition |
 |---|---|
@@ -161,6 +127,8 @@ Two new tables built in the notebook to analyse revenue by customer tenure:
 | Loyal | Signed up more than 18 months ago |
 
 **`gold_customer_segments`** — aggregates revenue, order count, and average order value grouped by tenure segment.
+
+**Key finding:** the **Growing segment** (customers 6–18 months old) generates the highest revenue per person, outspending both newer and longer-tenured cohorts.
 
 ### Pipeline Run Logging
 
@@ -171,9 +139,9 @@ Every pipeline execution — success or failure — appends one row to `workspac
 | `run_id` | Unique UUID per run |
 | `run_timestamp` | UTC start time |
 | `status` | `SUCCESS` or `FAILED` |
-| `layer_reached` | Last layer attempted (`BRONZE`, `QUALITY_CHECK`, `SILVER`, `GOLD`) |
+| `layer_reached` | Last layer attempted: `BRONZE`, `QUALITY_CHECK`, `SILVER`, or `GOLD` |
 | `failed_checks` | Semicolon-separated list of failing check descriptions; `NULL` on success |
-| `rows_bronze_*` | Row counts for each Bronze table |
+| `rows_bronze_*` | Row counts for each Bronze table at time of run |
 | `duration_seconds` | Wall-clock runtime |
 
 Query run history at any time:
@@ -184,20 +152,24 @@ FROM workspace.ecommerce.pipeline_runs
 ORDER BY run_timestamp;
 ```
 
-### Delta Lake Time Travel & RESTORE
+---
 
-Demonstrated time travel and point-in-time restore on the Silver table:
+## All Tables
 
-```sql
--- Inspect full version history
-DESCRIBE HISTORY workspace.ecommerce.silver_order_items;
-
--- Query a previous version
-SELECT * FROM workspace.ecommerce.silver_order_items VERSION AS OF 0;
-
--- Roll back to a prior version
-RESTORE TABLE workspace.ecommerce.silver_order_items TO VERSION AS OF 0;
-```
+| Layer | Table | Phase | Description |
+|---|---|---|---|
+| Bronze | `bronze_customers` | 1 | Raw customer records |
+| Bronze | `bronze_products` | 1 | Raw product catalog |
+| Bronze | `bronze_orders` | 1 | Raw order headers |
+| Bronze | `bronze_order_items` | 1 | Raw line items |
+| Silver | `silver_order_items` | 1 | Cleansed and joined fact table |
+| Gold | `gold_revenue_by_category` | 1 | Revenue and units by product category |
+| Gold | `gold_top_customers` | 1 | Top 100 customers by lifetime spend |
+| Gold | `gold_monthly_order_trends` | 1 | Monthly revenue and order volume |
+| Gold | `gold_return_analysis` | 2 | Return rate and revenue lost by category |
+| Silver | `silver_customers_enriched` | 2 | Customers with tenure segment labels |
+| Gold | `gold_customer_segments` | 2 | Revenue aggregated by tenure segment |
+| Logging | `pipeline_runs` | 2 | One row per pipeline execution |
 
 ---
 
@@ -210,7 +182,7 @@ RESTORE TABLE workspace.ecommerce.silver_order_items TO VERSION AS OF 0;
 | Highest order volume category | Sports — 335 orders |
 | Top customer lifetime spend | Ashley Pena — $14,494 across 10 orders |
 | Electronics return rate | 12.87% — lower than Home & Kitchen but highest absolute revenue lost due to high item prices |
-| Highest revenue per customer | **Growing segment** — customers 6–18 months old outspend both newer and longer-tenured cohorts on a per-person basis |
+| Highest revenue per customer | **Growing segment** — customers 6–18 months old outspend both newer and longer-tenured cohorts |
 
 ---
 
@@ -222,6 +194,7 @@ RESTORE TABLE workspace.ecommerce.silver_order_items TO VERSION AS OF 0;
 | Storage Format | Delta Lake |
 | Orchestration | Python (`pipeline.py`) |
 | SQL Execution | Databricks SQL Connector for Python |
+| Notebook Exploration | PySpark (Databricks Notebooks) |
 | Data Generation | Faker |
 | Data Manipulation | pandas |
 | Dashboard | Databricks SQL Dashboards |
@@ -286,7 +259,9 @@ python pipeline.py
 The pipeline will:
 - Connect to your Databricks SQL Warehouse
 - Create the `ecommerce` schema if it does not exist
-- Run all three layers (Bronze → Silver → Gold)
+- Run Bronze → Data Quality → Silver → Gold
+- Print a 27-check quality report before Silver runs
+- Log the run result to `pipeline_runs`
 - Print row counts and 5-row previews for each table
 
 ---
