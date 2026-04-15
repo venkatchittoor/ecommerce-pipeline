@@ -178,6 +178,11 @@ def run_bronze(cursor) -> None:
     print("  BRONZE — Raw Ingest")
     print("═" * 60)
 
+    # 0. On Databricks clusters the CSV files don't exist — generate them first
+    if _IN_DATABRICKS:
+        import generate_data
+        generate_data.generate()
+
     # 1. Ensure the schema exists
     run_sql(cursor, f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}",
             description=f"Ensuring schema {CATALOG}.{SCHEMA} exists …")

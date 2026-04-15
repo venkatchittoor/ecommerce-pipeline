@@ -119,15 +119,16 @@ def write_csv(filename: str, rows: list[dict]) -> None:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-def main() -> None:
+def generate() -> None:
+    """Generate all four CSV files. Safe to import and call programmatically."""
     print("Generating sample data …\n")
 
-    customers   = generate_customers(NUM_CUSTOMERS)
-    products    = generate_products(NUM_PRODUCTS)
+    customers    = generate_customers(NUM_CUSTOMERS)
+    products     = generate_products(NUM_PRODUCTS)
     customer_ids = [c["customer_id"] for c in customers]
-    orders      = generate_orders(NUM_ORDERS, customer_ids)
-    order_ids   = [o["order_id"] for o in orders]
-    order_items = generate_order_items(NUM_ORDER_ITEMS, order_ids, products)
+    orders       = generate_orders(NUM_ORDERS, customer_ids)
+    order_ids    = [o["order_id"] for o in orders]
+    order_items  = generate_order_items(NUM_ORDER_ITEMS, order_ids, products)
 
     write_csv("customers.csv",   customers)
     write_csv("products.csv",    products)
@@ -135,6 +136,10 @@ def main() -> None:
     write_csv("order_items.csv", order_items)
 
     print("\nDone. All CSV files are ready.")
+
+
+def main() -> None:
+    generate()
 
 
 if __name__ == "__main__":
