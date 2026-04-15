@@ -29,19 +29,28 @@ from tabulate import tabulate
 # ── Environment ───────────────────────────────────────────────────────────────
 
 # When DATABRICKS_RUNTIME_VERSION is set the script is running as a Databricks
-# Job on a cluster — credentials are injected automatically by the platform.
-# Otherwise assume a local run and load credentials from .env.
+# Job on a cluster — use the SDK's WorkspaceClient which picks up the cluster's
+# identity automatically.  Otherwise load credentials from the local .env file.
 _IN_DATABRICKS = "DATABRICKS_RUNTIME_VERSION" in os.environ
 
 if _IN_DATABRICKS:
-    RUN_MODE = "Databricks Job (cluster credentials)"
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.runtime import dbutils
+
+    _w = WorkspaceClient()
+    DATABRICKS_HOST      = _w.config.host
+    DATABRICKS_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
+    DATABRICKS_TOKEN     = (
+        dbutils.notebook.entry_point.getDbutils()
+        .notebook().getContext().apiToken().get()
+    )
+    RUN_MODE = "Databricks Job (SDK WorkspaceClient)"
 else:
     load_dotenv()
+    DATABRICKS_HOST      = os.environ["DATABRICKS_HOST"]
+    DATABRICKS_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
+    DATABRICKS_TOKEN     = os.environ["DATABRICKS_TOKEN"]
     RUN_MODE = "local (.env credentials)"
-
-DATABRICKS_HOST      = os.environ["DATABRICKS_HOST"]
-DATABRICKS_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
-DATABRICKS_TOKEN     = os.environ["DATABRICKS_TOKEN"]
 
 # All tables live in this catalog + schema (Unity Catalog style).
 # Override via DATABRICKS_CATALOG / DATABRICKS_SCHEMA in .env, or let the
