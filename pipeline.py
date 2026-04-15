@@ -28,7 +28,16 @@ from tabulate import tabulate
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
-load_dotenv()
+# When DATABRICKS_RUNTIME_VERSION is set the script is running as a Databricks
+# Job on a cluster — credentials are injected automatically by the platform.
+# Otherwise assume a local run and load credentials from .env.
+_IN_DATABRICKS = "DATABRICKS_RUNTIME_VERSION" in os.environ
+
+if _IN_DATABRICKS:
+    RUN_MODE = "Databricks Job (cluster credentials)"
+else:
+    load_dotenv()
+    RUN_MODE = "local (.env credentials)"
 
 DATABRICKS_HOST      = os.environ["DATABRICKS_HOST"]
 DATABRICKS_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
@@ -678,7 +687,8 @@ def main() -> None:
     bronze_rows  = {}
     _quality_failures.clear()
 
-    print("\nConnecting to Databricks …")
+    print(f"\nRunning in: {RUN_MODE}")
+    print("Connecting to Databricks …")
     with get_connection() as conn:
         with conn.cursor() as cursor:
             CATALOG = detect_catalog(cursor)
