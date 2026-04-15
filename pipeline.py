@@ -39,7 +39,8 @@ if _IN_DATABRICKS:
 
     _w = WorkspaceClient()
     DATABRICKS_HOST      = _w.config.host
-    DATABRICKS_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
+    _warehouses          = list(_w.warehouses.list())
+    DATABRICKS_HTTP_PATH = f"/sql/1.0/warehouses/{_warehouses[0].id}"
     DATABRICKS_TOKEN     = (
         dbutils.notebook.entry_point.getDbutils()
         .notebook().getContext().apiToken().get()
