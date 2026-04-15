@@ -4,6 +4,7 @@ Generates realistic sample CSV data for the e-commerce orders pipeline.
 """
 
 import csv
+import os
 import random
 from datetime import datetime, timedelta
 from faker import Faker
@@ -107,19 +108,20 @@ def generate_order_items(
 
 # ── CSV writer ───────────────────────────────────────────────────────────────
 
-def write_csv(filename: str, rows: list[dict]) -> None:
+def write_csv(filename: str, rows: list[dict], output_dir: str = ".") -> None:
     if not rows:
         return
-    with open(filename, "w", newline="", encoding="utf-8") as f:
+    path = os.path.join(output_dir, filename)
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  wrote {len(rows):>5,} rows → {filename}")
+    print(f"  wrote {len(rows):>5,} rows → {path}")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-def generate() -> None:
+def generate(output_dir: str = ".") -> None:
     """Generate all four CSV files. Safe to import and call programmatically."""
     print("Generating sample data …\n")
 
@@ -130,10 +132,10 @@ def generate() -> None:
     order_ids    = [o["order_id"] for o in orders]
     order_items  = generate_order_items(NUM_ORDER_ITEMS, order_ids, products)
 
-    write_csv("customers.csv",   customers)
-    write_csv("products.csv",    products)
-    write_csv("orders.csv",      orders)
-    write_csv("order_items.csv", order_items)
+    write_csv("customers.csv",   customers,   output_dir)
+    write_csv("products.csv",    products,    output_dir)
+    write_csv("orders.csv",      orders,      output_dir)
+    write_csv("order_items.csv", order_items, output_dir)
 
     print("\nDone. All CSV files are ready.")
 

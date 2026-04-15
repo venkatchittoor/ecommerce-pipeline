@@ -181,7 +181,7 @@ def run_bronze(cursor) -> None:
     # 0. On Databricks clusters the CSV files don't exist — generate them first
     if _IN_DATABRICKS:
         import generate_data
-        generate_data.generate()
+        generate_data.generate(output_dir="/tmp")
 
     # 1. Ensure the schema exists
     run_sql(cursor, f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}",
@@ -200,14 +200,16 @@ def run_bronze(cursor) -> None:
                 description=f"Truncating {full_name} …")
 
     # 3. Load CSV data
+    csv_dir = "/tmp" if _IN_DATABRICKS else "."
     for csv_file, table_name in CSV_TABLE_MAP.items():
         full_name = f"{CATALOG}.{SCHEMA}.{table_name}"
-        print(f"\n    Loading {csv_file} → {full_name}")
-        if not os.path.exists(csv_file):
+        csv_path  = os.path.join(csv_dir, csv_file)
+        print(f"\n    Loading {csv_path} → {full_name}")
+        if not os.path.exists(csv_path):
             raise FileNotFoundError(
-                f"{csv_file} not found. Run generate_data.py first."
+                f"{csv_path} not found. Run generate_data.py first."
             )
-        df = pd.read_csv(csv_file, dtype=str)   # ingest everything as strings
+        df = pd.read_csv(csv_path, dtype=str)   # ingest everything as strings
         upload_csv_to_table(cursor, df, full_name)
 
     print("\n  Bronze layer complete.")
