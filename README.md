@@ -193,6 +193,65 @@ Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, 
 
 ---
 
+## Phase 4: Natural Language Data Assistant
+
+### ask_data.py
+
+`ask_data.py` is a command-line data assistant that accepts plain-English questions, translates them to SQL using Claude, runs them against Databricks, and narrates the results in three sentences. No SQL knowledge required.
+
+```bash
+python ask_data.py
+```
+
+### Two-Call Claude Pattern
+
+Each question triggers exactly two Claude API calls:
+
+| Call | Input | Output |
+|---|---|---|
+| **Call 1 — SQL generation** | Natural language question + table schema | A valid SQL query |
+| **Call 2 — Narrative** | Original question + SQL + query results | 3-sentence plain-English answer |
+
+Claude autonomously picks the right table, writes the correct JOIN or aggregation, and spots patterns not explicitly asked for.
+
+### Prompt Caching
+
+The table definitions (the full schema context passed in `SYSTEM_PROMPT`) are marked with `cache_control: ephemeral`. After the first call in a session, Anthropic caches this block and subsequent calls skip re-processing it — reducing latency and API cost for every follow-up question.
+
+### Tables Available for Querying
+
+All 14 pipeline tables are exposed to the assistant:
+
+| Table | Layer | Description |
+|---|---|---|
+| `bronze_customers` | Bronze | Customer records — name, email, country, signup date |
+| `bronze_products` | Bronze | Product catalog — name, category, price |
+| `bronze_orders` | Bronze | Order headers — date, status |
+| `bronze_order_items` | Bronze | Line items — quantity, unit price, total price |
+| `silver_order_items` | Silver | All four Bronze tables joined and cleansed |
+| `gold_revenue_by_category` | Gold | Revenue, units, and order count per category |
+| `gold_top_customers` | Gold | Top 100 customers by lifetime spend |
+| `gold_monthly_order_trends` | Gold | Monthly revenue and order volume |
+| `gold_return_analysis` | Gold | Return rate and revenue lost by category |
+| `silver_customers_enriched` | Silver | Customers with tenure segment labels |
+| `gold_customer_segments` | Gold | Revenue aggregated by tenure segment |
+| `pipeline_runs` | Logging | One row per pipeline execution |
+| `bronze_orders_stream` | Bronze | Streaming order events from micro-batch pipeline |
+| `gold_stream_anomalies` | Gold | Anomalous orders flagged by 2σ threshold |
+
+### Example Questions and Answers
+
+**"Which customers in the growing segment have spent the most?"**
+> Ashley Pena leads the Growing segment at $14,494 across 23 orders, well ahead of the next-ranked customer. The top Growing segment customers show strong repeat purchase behaviour with high average order values. Nicole Chambers stands out as a high-potential re-engagement target with only 2 orders but one of the highest average order values in the cohort.
+
+**"Are there any suspicious orders I should investigate?"**
+> 15 anomalies were flagged by the 2σ detection model, representing 4.3% of all streaming orders. The highest single deviation was $3,510 above the mean threshold, suggesting a potentially fraudulent or data-entry error transaction. Customer 94 appears in multiple flagged records and warrants priority review.
+
+**"Compare return rates across all categories"**
+> Home & Kitchen leads all categories with a 16.03% return rate, the highest in the dataset. Electronics follows at 12.87% — a lower rate but the highest absolute revenue lost at $52,323 due to high item prices. Sports has the highest order volume (335 orders) but a comparatively lower return rate.
+
+---
+
 ## All Tables
 
 | Layer | Table | Phase | Description |
@@ -221,11 +280,12 @@ Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, 
 | Highest return rate | **Home & Kitchen — 16.03%** |
 | Most revenue lost to returns | **Electronics — $52,323** |
 | Highest order volume category | Sports — 335 orders |
-| Top customer lifetime spend | Ashley Pena — $14,494 across 10 orders |
+| Top customer lifetime spend | Ashley Pena — $14,494 across 23 orders |
 | Electronics return rate | 12.87% — lower than Home & Kitchen but highest absolute revenue lost due to high item prices |
 | Highest revenue per customer | **Growing segment** — customers 6–18 months old outspend both newer and longer-tenured cohorts |
 | Streaming anomaly rate | **4.3%** of orders flagged by 2σ detection — $63,754 revenue at risk |
 | Top fraud signal | Customer 94 placed 3 anomalous high-value orders across streaming data |
+| High-potential re-engagement target | Nicole Chambers — only 2 orders but one of the highest average order values in the Growing segment |
 
 ---
 
@@ -241,6 +301,8 @@ Anomalies are persisted with their deviation scores in `gold_stream_anomalies`, 
 | Data Generation | Faker |
 | Data Manipulation | pandas |
 | Dashboard | Databricks SQL Dashboards |
+| AI Layer | Claude API (`claude-sonnet-4-6`) — two-call pattern: SQL generation + result narration |
+| Prompt Caching | Anthropic `cache_control: ephemeral` — table schema cached after first call to reduce API cost |
 
 ---
 
@@ -316,6 +378,7 @@ ecommerce-pipeline/
 ├── generate_data.py                                          # Synthetic data generator (Faker-based)
 ├── pipeline.py                                               # Main pipeline — Bronze, Silver, Gold layers + logging
 ├── stream_simulator.py                                       # Local event generator — writes JSON to streaming_data/
+├── ask_data.py                                               # Phase 4 — natural language data assistant (two-call Claude pattern)
 ├── Phase2_PySpark_DataQuality_CustomerSegmentation.ipynb    # Phase 2 notebook
 ├── Phase3_Streaming_AnomalyDetection.ipynb                  # Phase 3 notebook
 ├── requirements.txt                                          # Python dependencies
