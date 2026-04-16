@@ -1,6 +1,6 @@
 # Ecommerce Pipeline
 
-A production-style data engineering pipeline built on **Databricks** and **Delta Lake**, implementing the **Medallion Architecture** (Bronze → Silver → Gold) to transform raw e-commerce CSVs into business-ready aggregation tables, a BI dashboard, and automated data quality monitoring.
+A production data engineering project built on **Databricks** and **Delta Lake**, progressing from a **Medallion Architecture** pipeline (Bronze → Silver → Gold) through PySpark data quality checks, customer segmentation, real-time streaming with anomaly detection, and a **natural language data assistant** powered by the Claude API. The pipeline runs as a scheduled **Databricks Job** on serverless compute, pulling code directly from GitHub and auto-detecting credentials at runtime — no manual cluster management or credential configuration required.
 
 ---
 
