@@ -252,6 +252,55 @@ All 14 pipeline tables are exposed to the assistant:
 
 ---
 
+## Phase 5: Databricks Jobs & Orchestration
+
+### Scheduled Databricks Job
+
+`pipeline.py` is configured as a scheduled Databricks Job, running the full Medallion pipeline (Bronze → Silver → Gold) automatically every day without manual intervention.
+
+| Setting | Value |
+|---|---|
+| Compute | Serverless |
+| Schedule | Daily at 6 AM CDT |
+| Source | GitHub — `main` branch |
+| Notifications | Email on start, success, and failure |
+
+### Serverless Compute
+
+The Job runs on Databricks Serverless compute — no cluster to configure, size, or manage. Databricks provisions and tears down resources automatically for each run.
+
+### GitHub Integration
+
+The Job is connected directly to this repository. Every run pulls the latest code from the `main` branch, so pushing a change here is all that's needed to deploy an update — no manual file uploads or workspace edits.
+
+### Auto-Credential Detection
+
+`pipeline.py` detects its execution context at startup and selects the appropriate credential source:
+
+| Context | Credential source |
+|---|---|
+| Databricks Job | `WorkspaceClient()` resolves host; notebook context API provides token; first available SQL Warehouse discovered via `w.warehouses.list()` |
+| Local | `DATABRICKS_HOST`, `DATABRICKS_HTTP_PATH`, `DATABRICKS_TOKEN` loaded from `.env` |
+
+No environment variables need to be configured on the cluster — the SDK handles everything automatically.
+
+### CSV File Handling
+
+The four source CSV files are generated at runtime rather than bundled with the repo:
+
+| Context | Write location |
+|---|---|
+| Databricks Job | `/tmp/` — writable scratch space available on every cluster |
+| Local | Current working directory (`.`) |
+
+`generate_data.generate(output_dir=...)` and `pipeline.py`'s Bronze loader both use the same path, keeping generation and ingestion in sync across both environments.
+
+### Run History
+
+Every execution is logged to the `pipeline_runs` Delta table (status, layer reached, row counts, duration) and is also visible in the Databricks Workflows UI with full stdout logs, timing, and re-run controls.
+
+---
+
 ## All Tables
 
 | Layer | Table | Phase | Description |
