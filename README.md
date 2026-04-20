@@ -344,6 +344,12 @@ Two expectation types enforce quality at the Silver layer:
 
 8 tables written to `workspace.ecommerce_dlt` — a separate schema from the imperative pipeline, keeping both pipelines independently runnable side by side.
 
+### Architectural Note: Upstream Dependency
+
+This DLT pipeline reads from `workspace.ecommerce` tables that are populated by the Phase 5 Databricks Job — making Phase 5 a hard upstream dependency. The two phases form a deliberate two-stage architecture: the Job generates and loads source Delta tables; the DLT pipeline reads from them declaratively to produce a parallel set of aggregations.
+
+In production, a DLT pipeline would typically source data directly from cloud storage (S3, ADLS, or GCS) using **Auto Loader** (`cloudFiles` format), bypassing the intermediate Delta tables entirely. Designing this pipeline to consume from an upstream Job rather than raw storage reflects real-world awareness of orchestration dependencies — an important consideration when chaining pipelines in any production data platform.
+
 ### DLT vs pipeline.py
 
 | Aspect | `pipeline.py` (imperative) | `dlt_pipeline.py` (declarative) |
