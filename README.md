@@ -301,6 +301,61 @@ Every execution is logged to the `pipeline_runs` Delta table (status, layer reac
 
 ---
 
+## Phase 6: Delta Live Tables
+
+### Declarative Pipeline
+
+`dlt_pipeline.py` reimplements the Medallion pipeline using **Delta Live Tables** — a declarative framework where each table is defined as a Python function decorated with `@dlt.table`. Databricks infers the dependency graph automatically and handles execution order, parallelism, and retries.
+
+```python
+@dlt.table(name="silver_order_items")
+@dlt.expect("valid customer", "customer_id IS NOT NULL")
+@dlt.expect_or_drop("valid status", "status IN ('completed', 'returned', 'pending')")
+def silver_order_items():
+    ...
+```
+
+### Visual DAG & Automatic Dependency Resolution
+
+Databricks renders the pipeline as a live DAG in the UI. Dependencies between tables are resolved automatically from `dlt.read()` calls — no explicit ordering or orchestration code required.
+
+### Parallel Execution
+
+DLT executes independent tables concurrently:
+
+| Stage | Tables | Runtime |
+|---|---|---|
+| Bronze | 4 tables (customers, products, orders, order_items) | 8s — all in parallel |
+| Silver | 1 table (joined fact table) | sequential — depends on Bronze |
+| Gold | 3 tables (revenue by category, top customers, return analysis) | 5s — all in parallel |
+
+### Data Quality Expectations
+
+Two expectation types enforce quality at the Silver layer:
+
+| Decorator | Action | Applied to |
+|---|---|---|
+| `@dlt.expect` | Flags bad records but **keeps** them | `valid customer`, `valid order`, `positive revenue` |
+| `@dlt.expect_or_drop` | **Removes** bad records before writing | `valid status` — drops any row not in `completed / returned / pending` |
+
+**Results:** 2,000 records written, 0 dropped — 100% pass rate across all expectations.
+
+### Output
+
+8 tables written to `workspace.ecommerce_dlt` — a separate schema from the imperative pipeline, keeping both pipelines independently runnable side by side.
+
+### DLT vs pipeline.py
+
+| Aspect | `pipeline.py` (imperative) | `dlt_pipeline.py` (declarative) |
+|---|---|---|
+| Execution order | Explicit, sequential | Automatic from dependency graph |
+| Parallelism | None — layers run one at a time | Built-in — independent tables run concurrently |
+| Data quality | Manual checks with custom reporting | `@dlt.expect` / `@dlt.expect_or_drop` decorators |
+| Monitoring | Custom `pipeline_runs` Delta table | Built-in visual DAG, event log, and quality metrics in UI |
+| Re-runs | Full truncate and reload | Incremental by default; full refresh on demand |
+
+---
+
 ## All Tables
 
 | Layer | Table | Phase | Description |
@@ -352,6 +407,7 @@ Every execution is logged to the `pipeline_runs` Delta table (status, layer reac
 | Dashboard | Databricks SQL Dashboards |
 | AI Layer | Claude API (`claude-sonnet-4-6`) — two-call pattern: SQL generation + result narration |
 | Prompt Caching | Anthropic `cache_control: ephemeral` — table schema cached after first call to reduce API cost |
+| Delta Live Tables | Declarative `@dlt.table` pipeline with automatic DAG resolution, parallel execution, and built-in data quality expectations |
 
 ---
 
@@ -428,6 +484,7 @@ ecommerce-pipeline/
 ├── pipeline.py                                               # Main pipeline — Bronze, Silver, Gold layers + logging
 ├── stream_simulator.py                                       # Local event generator — writes JSON to streaming_data/
 ├── ask_data.py                                               # Phase 4 — natural language data assistant (two-call Claude pattern)
+├── dlt_pipeline.py                                           # Phase 6 — declarative Delta Live Tables pipeline
 ├── Phase2_PySpark_DataQuality_CustomerSegmentation.ipynb    # Phase 2 notebook
 ├── Phase3_Streaming_AnomalyDetection.ipynb                  # Phase 3 notebook
 ├── requirements.txt                                          # Python dependencies
