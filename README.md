@@ -4,6 +4,12 @@ A production data engineering project built on **Databricks** and **Delta Lake**
 
 ---
 
+## Business Impact
+
+> Most data engineering portfolios demonstrate individual concepts in isolation. This pipeline demonstrates the full production stack end-to-end — Medallion architecture, 27 automated quality checks, structured streaming with anomaly detection, natural language querying, scheduled jobs, and Delta Live Tables — in a single cohesive project. A reusable lakehouse reference implementation.
+
+---
+
 ## Phase 1: Medallion Architecture & Core Pipeline
 
 ### What Was Built
